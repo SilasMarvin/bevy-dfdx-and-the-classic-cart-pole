@@ -69,16 +69,18 @@ impl Model {
 
     pub fn push_experience(&mut self, transition: Transition) {
         self.experience.push(transition);
-        if self.experience.len() > 4000 {
-            self.experience = self.experience[2000..].to_vec();
+        if self.experience.len() > 10000 {
+            self.experience = self.experience[5000..].to_vec();
         }
     }
 
     pub fn train(&mut self) {
-        // Select the batch
+        // Select the experience batch
         let mut rng = rand::thread_rng();
-        let start = rng.gen_range(0..self.experience.len() - BATCH_SIZE);
-        let experience = &self.experience[start..start + BATCH_SIZE];
+        let distribution = rand::distributions::Uniform::from(0..self.experience.len());
+        let experience: Vec<Transition> = (0..BATCH_SIZE)
+            .map(|_index| self.experience[distribution.sample(&mut rng)])
+            .collect();
 
         // Get the models expected rewards
         let observations: Vec<_> = experience.iter().map(|x| x.0.to_owned()).collect();
@@ -170,6 +172,7 @@ fn size_scaling(windows: Res<Windows>, mut q: Query<(&Size, &mut Transform)>) {
 }
 
 fn step(
+    mut q_text: Query<&mut Text>,
     mut q_cart: Query<(&mut Transform, &mut Velocity), (With<Cart>, Without<Pole>)>,
     mut q_pole: Query<(&mut Transform, &mut Velocity), (With<Pole>, Without<Cart>)>,
     mut model: NonSendMut<Model>,
@@ -180,6 +183,9 @@ fn step(
     let (mut pole_transform, mut pole_velocity) = q_pole
         .get_single_mut()
         .expect("Could not get the pole information");
+    let mut text = q_text
+        .get_single_mut()
+        .expect("Could not get the text with the episode info");
 
     let observation = [
         cart_transform.translation.x,
@@ -233,16 +239,25 @@ fn step(
         || model.survived_steps > 499
     {
         println!(
-            "\nRESETTING Episode: {}  SURVIVED: {}\n",
+            "RESETTING Episode: {}  SURVIVED: {}",
             model.episode, model.survived_steps,
         );
-        // Reset cart and pole variables
-        cart_velocity.0 = 0.;
-        pole_velocity.0 = 0.;
-        cart_transform.translation.x = 0.;
-        pole_transform.translation.x = cart_transform.translation.x;
-        pole_transform.rotation.z = 0.;
 
+        // Reset cart and pole variables just like openai does
+        let mut rng = rand::thread_rng();
+        cart_velocity.0 = rng.gen_range(-0.05..0.05);
+        pole_velocity.0 = rng.gen_range(-0.05..0.05);
+        cart_transform.translation.x = rng.gen_range(-0.05..0.05);
+        pole_transform.translation.x = cart_transform.translation.x;
+        pole_transform.rotation.z = rng.gen_range(-0.05..0.05);
+
+        // Update the latest episode survided text
+        text.sections[0].value = format!(
+            "Episode: {} - Survided: {}",
+            model.episode, model.survived_steps
+        );
+
+        // Reset the survived_steps, increment episode count, and push_experience
         model.survived_steps = 0;
         model.episode += 1;
         model.push_experience((observation, action, 0, None));
@@ -315,6 +330,28 @@ fn add_cart_pole(mut commands: Commands, asset_server: Res<AssetServer>) {
             width: 0.1,
             height: 1.,
         });
+
+    commands.spawn_bundle(
+        TextBundle::from_section(
+            "",
+            TextStyle {
+                font: asset_server.load("fonts/FiraSans-Bold.otf"),
+                font_size: 20.0,
+                color: Color::WHITE,
+            },
+        )
+        .with_text_alignment(TextAlignment::CENTER)
+        .with_style(Style {
+            align_self: AlignSelf::FlexEnd,
+            position_type: PositionType::Absolute,
+            position: UiRect {
+                bottom: Val::Px(5.0),
+                right: Val::Px(15.0),
+                ..default()
+            },
+            ..default()
+        }),
+    );
 }
 
 fn add_camera(mut commands: Commands) {
