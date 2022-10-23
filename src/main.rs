@@ -251,7 +251,7 @@ fn step(
         pole_transform.translation.x = cart_transform.translation.x;
         pole_transform.rotation.z = rng.gen_range(-0.05..0.05);
 
-        // Update the latest episode survided text
+        // Update the latest episode and survived text
         text.sections[0].value = format!(
             "Episode: {} - Survided: {}",
             model.episode, model.survived_steps
